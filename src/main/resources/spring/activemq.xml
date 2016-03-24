@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:amq="http://activemq.apache.org/schema/core"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+       http://activemq.apache.org/schema/core http://activemq.apache.org/schema/core/activemq-core-5.8.0.xsd">
+	<!-- 配置ConnectionFactory -->
+
+	<!-- 真正可以产生Connection的ConnectionFactory，由对应的 JMS服务厂商提供 -->
+
+	<bean id="targetConnectionFactory" class="org.apache.activemq.ActiveMQConnectionFactory">
+
+		<property name="brokerURL"
+			value="tcp://localhost:61616?jms.prefetchPolicy.queuePrefetch=1" />
+		<property name="useAsyncSend" value="true" />
+		<property name="alwaysSessionAsync" value="true" />
+		<property name="useDedicatedTaskRunner" value="true" />
+		<!-- <property name="maxThreadPoolSize" value="5" /> -->
+	</bean>
+
+
+	<!-- 连接池配置 -->
+	<bean id="jmsFactory" class="org.apache.activemq.pool.PooledConnectionFactory"
+		destroy-method="stop">
+
+		<property name="connectionFactory" ref="targetConnectionFactory"></property>
+		<property name="maximumActiveSessionPerConnection" value="500" />
+		<!-- 空闲连接超时时间,单位:毫秒 -->
+		<property name="idleTimeout" value="3000" />
+		<!-- 如果连接池是满的,则阻塞 -->
+		<property name="blockIfSessionPoolIsFull" value="true" />
+		<!-- 最大连接数 -->
+		<property name="maxConnections" value="500" />
+	</bean>
+
+
+	<!-- Spring JMS Template -->
+	<bean id="jmsTemplate" class="org.springframework.jms.core.JmsTemplate">
+		<!-- 使用activemq连接池，客户端不会释放 开始 -->
+		<property name="connectionFactory" ref="jmsFactory">
+		</property>
+		<!-- 使用activemq连接池，客户端不会释放 结束 -->
+
+		<!-- 直接使用jms connection单点连接 开始 -->
+		<!-- <property name="connectionFactory" ref="targetConnectionFactory"> 
+			</property> -->
+		<!-- 直接使用jms connection单点连接 结束 -->
+
+		<property name="explicitQosEnabled" value="true" />
+		<!-- deliveryMode, priority, timeToLive 的开关，要生效，必须配置为true，默认false -->
+		<property name="deliveryMode" value="1" />
+		<!-- 发送模式 DeliveryMode.NON_PERSISTENT=1:非持久 ; DeliveryMode.PERSISTENT=2:持久 -->
+		<property name="pubSubDomain" value="false" />
+		<property name="defaultDestination" ref="destination" />
+	</bean>
+
+	<!--queue消息消费者 -->
+	<bean id="consumerService" class="webpoc.JMSConsumerServiceImpl">
+		<property name="jmsTemplate" ref="jmsTemplate"></property>
+	</bean>
+	<!--queue消息生产者 -->
+	<bean id="producerService" class="webpoc.JMSProducerServiceImpl">
+		<property name="jmsTemplate" ref="jmsTemplate"></property>
+	</bean>
+
+	<!-- 发送消息的目的地（一个队列） -->
+	<bean id="destination" class="org.apache.activemq.command.ActiveMQQueue">
+		<!-- 设置消息队列的名字 -->
+		<constructor-arg value="test.queue" />
+	</bean>
+
+	<!-- 配置消息队列监听者（Queue），代码下面给出，只有一个onMessage方法 -->
+	<bean id="queueMessageListener" class="webpoc.QueueMessageListener" />
+
+	<!-- 消息监听容器（Queue），配置连接工厂，监听的队列是queue2，监听器是上面定义的监听器 -->
+	<bean id="jmsContainer"
+		class="org.springframework.jms.listener.DefaultMessageListenerContainer">
+		<property name="connectionFactory" ref="targetConnectionFactory" />
+		<property name="destination" ref="destination" />
+		<property name="messageListener" ref="queueMessageListener" />
+		<property name="concurrentConsumers" value="100" />
+	</bean>
+</beans>
